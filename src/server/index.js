@@ -1,9 +1,12 @@
 const express = require('express');
+const PdfPrinter = require('pdfmake');
 const puppeteer = require('puppeteer');
+const path = require('path');
+const { styleText } = require('util');
 
 const app = express();
 const PORT = 8080;
-const TIMEOUT = 60000;
+const TIMEOUT = 60000 * 2; // 2 minutos
 
 app.use(express.json());
 
@@ -35,6 +38,13 @@ const generateChartBase64 = async (
   const browser = await puppeteer.launch({
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
+  //Usar esse em produção
+  // para testar no linux which chromium-browser
+  // const browser = await puppeteer.launch({
+  //   args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  //   headless: true,
+  //   executablePath: '/usr/bin/chromium-browser'
+  // });
   const page = await browser.newPage();
 
   //const maximoHistorico = Math.max(...series.map((item) => item[1]));
@@ -80,11 +90,11 @@ const generateChartBase64 = async (
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Highcharts Example</title>
-    <script src="https://code.highcharts.com/highcharts.js"></script>
+    <title>Highcharts</title>
+    <script src="https://code.highcharts.com/highcharts.js" defer></script>
   </head>
   <body>
-    <div id="container" style="width: 800; height: 800"></div>
+    <div id="container" class="container" style="width: 800; height:800"></div>
 
     <script>
       document.addEventListener("DOMContentLoaded", function () {
@@ -107,9 +117,12 @@ const generateChartBase64 = async (
               fontWeight: "normal",
             },
           },
-            xAxis: {
-                type: "datetime",
-            },
+          xAxis: {
+            type: "datetime",
+            labels: {
+              format: '{value:%H:%M}'
+            }
+          },
           yAxis: {
             title: {
               text: ${JSON.stringify(textLegend)},
@@ -181,15 +194,19 @@ const generateChartBase64 = async (
   // Renderiza o HTML no Puppeteer
   await page.setContent(chartHTML);
 
-  // Aguardar que o Highcharts carregue completamente os dados
-  await page.waitForSelector('#container', { visible: true });
   await page.setViewport({ width: 800, height: 800, deviceScaleFactor: 2 });
+
+  // Aguardar que o Highcharts carregue completamente os dados
+  await page.waitForFunction(() => document.querySelector('#container') !== null, { timeout: 60000 });
+
   const element = await page.$('#container');
   const imageBuffer = await element.screenshot({ encoding: 'base64' });
   await browser.close();
 
   return imageBuffer;
 };
+
+
 
 // Endpoint para obter o gráfico em Base64
 app.post('/chart', async (req, res) => {
@@ -260,6 +277,255 @@ app.post('/chart', async (req, res) => {
     console.error('Erro ao gerar o gráfico:', error);
     res.status(500).json({ error: 'Erro ao gerar o gráfico' });
   }
+});
+app.get('/pdf', async (req, res) => {
+  function paginateTableRows(rows, maxRowsPerPage) {
+    const paginatedRows = [];
+    for (let i = 0; i < rows.length; i += maxRowsPerPage) {
+      paginatedRows.push(rows.slice(i, i + maxRowsPerPage));
+    }
+    return paginatedRows;
+  };
+
+  //função para o header
+  const header = (currentPage, pageCount) => {
+    return {
+      table: {
+        widths: ['auto', '*', 'auto'],
+        body: [
+          [
+            '',
+            '',
+            {
+              text: new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR'),
+              alignment: 'right',
+              style: {
+                fontSize: 9,
+                color: '#386481',
+              },
+            },
+          ],
+        ],
+      },
+      layout: 'noBorders',
+      margin: [10, 10, 10, 0],
+    };
+  };
+  // Função para rodapé
+  const footer = (currentPage, pageCount) => {
+    return {
+      table: {
+        widths: ['auto', '*', '*', 'auto'],
+        body: [
+          [
+            // QR Code como imagem
+            {
+              image: path.join(__dirname, '../assets', 'qrcode.png'), // Substitua pelo caminho do QR code
+              width: 50,
+              alignment: 'center',
+
+            },
+            // Texto descritivo
+            {
+              text: `Todo seu conteúdo informativo com gráficos, históricos e relatórios direto no seu smartphone. Acesse o SisWeb Mobile a partir do código QR ao lado e tenha em mãos um sistema completo em qualquer lugar`,
+              fontSize: 9,
+              color: '#386481',
+              alignment: 'left',
+
+
+            },
+            {
+              text: `\n\nwww.supplymonitoring.com.br\ncontato@supplymonitoring.com.br`,
+              fontSize: 9,
+              color: '#386481',
+              alignment: 'left',
+              margin: [0, -10, 0, 0]
+
+            },
+            // Logotipo como imagem
+            {
+              image: path.join(__dirname, '../assets', 'supply.png'), // Substitua pelo caminho do QR code
+              width: 50,
+              alignment: 'center',
+
+
+            },
+          ],
+          // Linha separadora e número da página
+          [
+            {
+              text: '',
+              colSpan: 3,
+              border: [true, true, true, false],
+
+            },
+            '',
+            '',
+            '',
+          ],
+          [
+            '',
+            '',
+
+            {
+              text: `Página ${currentPage} de ${pageCount}`,
+              alignment: 'right',
+              fontSize: 8,
+              margin: [0, 0, -50, 0]
+            },
+            '',
+          ],
+        ],
+      },
+      layout: 'noBorders',
+      margin: [20, -50, 10, 0], // Margens do rodapé
+    };
+  };
+  const fonts = {
+    Roboto: {
+      normal: path.join(__dirname, 'fonts/Roboto', 'Roboto-Regular.ttf'),
+      bold: path.join(__dirname, 'fonts/Roboto', 'Roboto-Bold.ttf'),
+      italics: path.join(__dirname, 'fonts/Roboto', 'Roboto-Italic.ttf'),
+      bolditalics: path.join(__dirname, 'fonts/Roboto', 'Roboto-BoldItalic.ttf'),
+    },
+  };
+
+
+  // Inicializando o PdfPrinter com as fontes
+  const printer = new PdfPrinter(fonts);
+
+  //criei um array de dados com 3 colunas e 200 linhas
+  const dataTable = [
+    [
+      "30/10/2024 - 16:02:13",
+      "SMCCA ESPREE VCA - COMPRESSOR desligado por falha no fornecimento de energia no circuito do equipamento em 30/10/24 às 15:59:34",
+      ">Sr. Iverson informa oscilação de energia da rede de distribuição - justificado por Suporte em 31/10/2024 14:25:28",
+    ], [
+      "30/10/2024 - 16:07:13",
+      "SMCCA ESPREE VCA - COMPRESSOR retornou ao pleno funcionamento em 30/10/24 às 16:00:51",
+      "Retorno de funcionamento do compressor após falha ou parada prévia.",
+    ], [
+      "30/10/2024 - 16:07:18",
+      "SMCCA ESPREE VCA - COMPRESSOR desligado por falha no fornecimento de energia no circuito do equipamento em 30/10/24 às 16:02:18",
+      ">Sr. Iverson informa oscilação de energia da rede de distribuição - justificado por Suporte em 31/10/2024 14:25:40",
+    ], [
+      "15/11/2024 - 02:18:45",
+      "SMCCA ESPREE VCA - COMPRESSOR desligado por falha no fornecimento de energia no circuito do equipamento em 15/11/24 às 02:13:47",
+      "Retorno de funcionamento do compressor após falha ou parada prévia.",
+    ], [
+      "15/11/2024 - 02:18:55",
+      "SMCCA ESPREE VCA - COMPRESSOR retornou ao pleno funcionamento em 15/11/24 às 02:14:51",
+      "Retorno de funcionamento do compressor após falha ou parada prévia.",
+    ], [
+      "15/11/2024 - 02:38:38",
+      "SMCCA ESPREE VCA - COMPRESSOR retornou ao pleno funcionamento em 15/11/24 às 02:36:09",
+      "Retorno de funcionamento do compressor após falha ou parada prévia.",
+    ], [
+      "23/11/2024 - 23:42:09",
+      "SMCCA ESPREE VCA - COMPRESSOR desligado por falha no fornecimento de energia no circuito do equipamento em 23/11/24 às 23:40:15",
+      "Retorno de funcionamento do compressor após falha ou parada prévia.",
+    ], [
+      "23/11/2024 - 23:42:22",
+      "SMCCA ESPREE VCA - COMPRESSOR retornou ao pleno funcionamento em 23/11/24 às 23:41:15",
+      "Retorno de funcionamento do compressor após falha ou parada prévia.",
+    ], [
+      "23/11/2024 - 23:47:10",
+      "SMCCA ESPREE VCA - COMPRESSOR desligado por falha no fornecimento de energia no circuito do equipamento em 23/11/24 às 23:42:36",
+      "Retorno de funcionamento do compressor após falha ou parada prévia.",
+    ], [
+      "23/11/2024 - 23:52:09",
+      "SMCCA ESPREE VCA - COMPRESSOR retornou ao pleno funcionamento em 23/11/24 às 23:51:09",
+      "Retorno de funcionamento do compressor após falha ou parada prévia.",
+    ], [
+      "23/11/2024 - 23:57:16",
+      "SMCCA ESPREE VCA - COMPRESSOR desligado por falha no fornecimento de energia no circuito do equipamento em 23/11/24 às 23:52:31",
+      "Retorno de funcionamento do compressor após falha ou parada prévia.",
+    ], [
+      "24/11/2024 - 00:07:12",
+      "SMCCA ESPREE VCA - COMPRESSOR retornou ao pleno funcionamento em 24/11/24 às 00:03:18",
+      "Retorno de funcionamento do compressor após falha ou parada prévia.",
+    ], [
+      "24/11/2024 - 00:07:18",
+      "SMCCA ESPREE VCA - COMPRESSOR desligado por falha no fornecimento de energia no circuito do equipamento em 24/11/24 às 00:04:36",
+      "Retorno de funcionamento do compressor após falha ou parada prévia.",
+    ], [
+      "24/11/2024 - 00:27:17",
+      "SMCCA ESPREE VCA - COMPRESSOR retornou ao pleno funcionamento em 24/11/24 às 00:24:35",
+      "Retorno de funcionamento do compressor após falha ou parada prévia.",
+    ], [
+      "24/11/2024 - 02:02:10",
+      "SMCCA ESPREE VCA - COMPRESSOR desligado por falha no fornecimento de energia no circuito do equipamento em 24/11/24 às 02:00:33",
+      "Retorno de funcionamento do compressor após falha ou parada prévia.",
+    ], [
+      "24/11/2024 - 02:07:09",
+      "SMCCA ESPREE VCA - COMPRESSOR retornou ao pleno funcionamento em 24/11/24 às 02:02:15",
+      "Retorno de funcionamento do compressor após falha ou parada prévia.",
+    ], [
+      "24/11/2024 - 02:07:14",
+      "SMCCA ESPREE VCA - COMPRESSOR desligado por falha no fornecimento de energia no circuito do equipamento em 24/11/24 às 02:03:25",
+      "Retorno de funcionamento do compressor após falha ou parada prévia.",
+    ], [
+      "24/11/2024 - 02:27:23",
+      "SMCCA ESPREE VCA - COMPRESSOR retornou ao pleno funcionamento em 24/11/24 às 02:23:24",
+      "Retorno de funcionamento do compressor após falha ou parada prévia.",
+    ], [
+      "25/11/2024 - 03:19:49",
+      "SMCCA ESPREE VCA - COMPRESSOR desligado por falha no fornecimento de energia no circuito do equipamento em 25/11/24 às 03:13:22",
+      "Retorno de funcionamento do compressor após falha ou parada prévia.",
+    ],
+
+  ];
+
+  // Populate 200 rows dynamically
+  for (let i = 1; i <= 200; i++) {
+    dataTable.push([
+      "30/10/2024 - 16:02:13",
+      "SMCCA ESPREE VCA - COMPRESSOR desligado por falha no fornecimento de energia no circuito do equipamento em 30/10/24 às 15:59:34",
+      ">Sr. Iverson informa oscilação de energia da rede de distribuição - justificado por Suporte em 31/10/2024 14:25:28",
+    ]);
+  }
+
+  const paginatedRows = paginateTableRows(dataTable, 23);
+
+  // Gerar conteúdo da tabela com várias páginas
+  const content = paginatedRows.flatMap((pageRows, index) => [
+    {
+      table: {
+        headerRows: 1,
+        widths: [70, 'auto', '*'],
+        body: [[{ text: 'Data/Hora', fontSize: 8 }, { text: 'Mensagem', fontSize: 8 }, { text: 'Observação', fontSize: 8 }], ...pageRows], // Cabeçalho + linhas da página
+      },
+      layout: 'headerLineOnly', // Estilo da tabela
+      style: {
+        fontSize: 7,
+        alignment: 'center'
+      },
+
+    },
+    index < paginatedRows.length - 1 ? { text: '', pageBreak: 'after' } : null, // Adiciona quebra de página
+
+  ]);
+
+  const docDefinition = {
+    header: header,
+    content: content.filter(Boolean),
+    footer: footer,
+    defaultStyle: {
+      font: 'Roboto',
+    },
+  };
+
+
+
+
+  // Criando o PDF no formato stream
+  const pdfDoc = printer.createPdfKitDocument(docDefinition);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'inline; filename=document.pdf');
+
+  // Enviando o PDF como resposta
+  pdfDoc.pipe(res);
+  pdfDoc.end();
 });
 
 // Inicia o servidor
