@@ -278,7 +278,7 @@ app.post('/chart', async (req, res) => {
     res.status(500).json({ error: 'Erro ao gerar o gráfico' });
   }
 });
-app.get('/pdf', async (req, res) => {
+app.post('/pdf', async (req, res) => {
   function paginateTableRows(rows, maxRowsPerPage) {
     const paginatedRows = [];
     for (let i = 0; i < rows.length; i += maxRowsPerPage) {
@@ -286,6 +286,10 @@ app.get('/pdf', async (req, res) => {
     }
     return paginatedRows;
   };
+
+  const images = `data:image/png;base64,${req.body.images[0]}`;
+  console.log(images);
+
 
   //função para o header
   const header = (currentPage, pageCount) => {
@@ -314,6 +318,7 @@ app.get('/pdf', async (req, res) => {
   // Função para rodapé
   const footer = (currentPage, pageCount) => {
     return {
+
       table: {
         widths: ['auto', '*', '*', 'auto'],
         body: [
@@ -482,10 +487,10 @@ app.get('/pdf', async (req, res) => {
       "30/10/2024 - 16:02:13",
       "SMCCA ESPREE VCA - COMPRESSOR desligado por falha no fornecimento de energia no circuito do equipamento em 30/10/24 às 15:59:34",
       ">Sr. Iverson informa oscilação de energia da rede de distribuição - justificado por Suporte em 31/10/2024 14:25:28",
-    ]);
+    ],);
   }
 
-  const paginatedRows = paginateTableRows(dataTable, 23);
+  const paginatedRows = paginateTableRows(dataTable, 20);
 
   // Gerar conteúdo da tabela com várias páginas
   const content = paginatedRows.flatMap((pageRows, index) => [
@@ -508,7 +513,116 @@ app.get('/pdf', async (req, res) => {
 
   const docDefinition = {
     header: header,
-    content: content.filter(Boolean),
+    content: [
+
+      {
+        text: 'S.I.M.E.A',
+        style: {
+          fontSize: 10,
+          bold: true,
+          color: 'gray',
+          alignment: 'center',
+          margin: [0, 0, 0, 10],
+        },
+      },
+      {
+        text: 'SISTEMA INTELIGENTE DE MONITORAMENTO DE ENERGIA E AMBIÊNCIA',
+        style: {
+          fontSize: 8,
+          bold: true,
+          color: 'gray',
+          alignment: 'center',
+          margin: [0, 0, 0, 10],
+        },
+      },
+      {
+        text: 'RELATÓRIO DE ACOMPANHAMENTO',
+        style: {
+          fontSize: 8,
+          bold: true,
+          color: 'gray',
+          alignment: 'center',
+          margin: [0, 0, 0, 10],
+        },
+      },
+      {
+        canvas: [
+          {
+            type: 'line',
+            x1: 0,
+            y1: 0,
+            x2: 515,
+            y2: 0,
+            lineWidth: 1,
+            lineColor: '#D73F33',
+          },
+        ],
+        margin: [0, 10, 0, 10],
+      },
+
+      {
+        table: {
+          headerRows: 1,
+          widths: ['*', '*', '*', '*'],
+          body: [
+            [
+              [
+                { text: 'Cliente:', bold: true, alignment: 'left' },
+                { text: 'Equipamento:', bold: true, alignment: 'left' },
+                { text: 'Endereço:', bold: true, alignment: 'left' },
+
+              ],
+              [
+                { text: 'Multimagem', alignment: 'left' },
+                { text: 'DC MULTI PIT SSA', alignment: 'left' },
+                {
+                  text: 'Avenida Manoel Dias Da Silva, 675,- Pituba - Salvador-BA',
+                  alignment: 'left',
+                },
+              ],
+              [
+                { text: 'CNPJ:', bold: true, alignment: 'left' },
+                { text: 'Responsável:', bold: true, alignment: 'left' },
+                { text: 'Período:', bold: true, alignment: 'left' },
+
+
+
+              ],
+
+              [
+
+                { text: '01.126.692/0001-81', alignment: 'left' },
+                { text: 'Ingreddy Brandão', alignment: 'left' },
+                { text: '01/12/2024 a 17/12/2024', alignment: 'left' },
+
+
+              ],
+
+            ]
+          ],
+        },
+        layout: 'noBorders',
+        style: {
+          fontSize: 8,
+        },
+        margin: [0, 0, 0, 10],
+      }, content.filter(Boolean), {
+        text: '',
+        pageBreak: 'before', // Quebra de página antes da imagem
+      }, {
+        pageOrientation: 'landscape', // Orientação paisagem
+        stack: [
+          {
+            image: images,
+            width: 500, // Ajuste a largura da imagem para paisagem
+            alignment: 'center', // Centralize a imagem
+            
+            justifyContent: 'center',
+            margin: [0, 0, 0, 0], // Espaçamento superior
+          },
+        ],
+
+      }],
     footer: footer,
     defaultStyle: {
       font: 'Roboto',
